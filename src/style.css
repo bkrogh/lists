@@ -1,0 +1,454 @@
+:root {
+  --bg: #f1f3f4;
+  --card: #ffffff;
+  --text: #202124;
+  --muted: #5f6368;
+  --line: #e0e0e0;
+  --hover: rgba(60, 64, 67, 0.08);
+  --accent: #fbbc04;
+  --accent-text: #202124;
+  --shadow: 0 1px 2px rgba(60, 64, 67, 0.3), 0 2px 6px 2px rgba(60, 64, 67, 0.15);
+  --toast: #323232;
+  --toast-text: #ffffff;
+  --toast-action: #fbbc04;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #202124;
+    --card: #2d2e30;
+    --text: #e8eaed;
+    --muted: #9aa0a6;
+    --line: #5f6368;
+    --hover: rgba(232, 234, 237, 0.08);
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.6), 0 2px 6px 2px rgba(0, 0, 0, 0.3);
+    --toast: #e8eaed;
+    --toast-text: #202124;
+    --toast-action: #a15c00;
+    color-scheme: dark;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.45 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  padding: 32px 16px calc(96px + env(safe-area-inset-bottom));
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+.card {
+  max-width: 600px;
+  margin: 0 auto;
+  background: var(--card);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  padding: 8px 0 12px;
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px 4px 16px;
+}
+
+.title {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+  font-size: 20px;
+  font-weight: 500;
+  padding: 8px 0;
+  outline: none;
+}
+
+.title::placeholder,
+.add-row input::placeholder {
+  color: var(--muted);
+}
+
+.actions {
+  display: flex;
+  gap: 4px;
+}
+
+.btn {
+  border: 0;
+  background: none;
+  border-radius: 4px;
+  padding: 6px 12px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.btn:hover {
+  background: var(--hover);
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #f9ab00;
+}
+
+.btn-quiet {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+/* ---------- items ---------- */
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  min-height: 4px; /* keeps an empty list a valid drop target */
+}
+
+.item {
+  display: flex;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 2px 8px 2px 0;
+  border-top: 1px solid transparent;
+  border-bottom: 1px solid transparent;
+  background: var(--card);
+}
+
+.item:hover,
+.item:focus-within {
+  border-color: var(--line);
+}
+
+.item.indent {
+  padding-left: 32px;
+}
+
+.handle {
+  flex: none;
+  width: 24px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  cursor: grab;
+  opacity: 0;
+  touch-action: none;
+}
+
+.handle svg {
+  width: 18px;
+  height: 18px;
+  fill: var(--muted);
+}
+
+.item:hover .handle,
+.item:focus-within .handle {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .handle {
+    opacity: 0.6;
+    width: 32px;
+  }
+}
+
+.check {
+  flex: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  margin: 7px 8px 0 0;
+  border: 2px solid var(--muted);
+  border-radius: 2px;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+
+.check:checked::after {
+  content: '';
+  width: 5px;
+  height: 10px;
+  margin-top: -2px;
+  border: solid var(--muted);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.text {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+  resize: none;
+  outline: none;
+  padding: 5px 0;
+  line-height: 22px;
+  overflow: hidden;
+  field-sizing: content;
+}
+
+.done .text {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+
+.expiry {
+  flex: none;
+  font-size: 12px;
+  color: var(--muted);
+  padding: 7px 4px 0;
+  white-space: nowrap;
+}
+
+.del {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--muted);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.del:hover {
+  background: var(--hover);
+}
+
+.item:hover .del,
+.item:focus-within .del,
+.del:focus-visible {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .del {
+    opacity: 0.6;
+  }
+}
+
+/* drag states */
+.ghost {
+  opacity: 0.4;
+  background: var(--hover);
+}
+
+.chosen {
+  border-color: var(--line);
+}
+
+.dragging {
+  box-shadow: var(--shadow);
+}
+
+/* ---------- add row ---------- */
+
+.add-row {
+  display: flex;
+  align-items: center;
+  padding: 2px 8px 2px 24px;
+  border-top: 1px solid transparent;
+  border-bottom: 1px solid transparent;
+  cursor: text;
+}
+
+.add-row:focus-within {
+  border-color: var(--line);
+}
+
+.plus {
+  width: 26px;
+  font-size: 22px;
+  color: var(--muted);
+  line-height: 1;
+}
+
+.add-row input {
+  flex: 1;
+  border: 0;
+  background: none;
+  outline: none;
+  padding: 6px 0;
+}
+
+.hint {
+  margin: 8px 16px 4px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* ---------- completed ---------- */
+
+.done-section {
+  margin-top: 8px;
+  border-top: 1px solid var(--line);
+  padding-top: 4px;
+}
+
+.done-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px;
+}
+
+.done-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  padding: 8px 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.chevron {
+  width: 22px;
+  height: 22px;
+  fill: currentColor;
+  transition: transform 0.15s;
+}
+
+.collapsed .chevron {
+  transform: rotate(-90deg);
+}
+
+.collapsed #done {
+  display: none;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+/* ---------- footer, dialog, toast ---------- */
+
+.footer {
+  max-width: 600px;
+  margin: 16px auto 0;
+  text-align: center;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.dialog {
+  width: min(560px, calc(100vw - 32px));
+  border: 0;
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--text);
+  box-shadow: var(--shadow);
+  padding: 20px;
+}
+
+.dialog::backdrop {
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.dialog h2 {
+  margin: 0 0 4px;
+  font-size: 18px;
+  font-weight: 500;
+}
+
+.dialog p {
+  margin: 0 0 12px;
+  font-size: 13px;
+}
+
+.dialog textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: none;
+  padding: 8px;
+  font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  resize: vertical;
+}
+
+.dialog-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.dialog-footer .muted {
+  flex: 1;
+  font-size: 13px;
+}
+
+.toast {
+  position: fixed;
+  left: 24px;
+  bottom: calc(24px + env(safe-area-inset-bottom));
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 12px 10px 20px;
+  border-radius: 4px;
+  background: var(--toast);
+  color: var(--toast-text);
+  font-size: 14px;
+  box-shadow: var(--shadow);
+  transform: translateY(150%);
+  opacity: 0;
+  transition: transform 0.2s, opacity 0.2s;
+  pointer-events: none;
+}
+
+.toast.show {
+  transform: none;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.toast .btn-quiet {
+  color: var(--toast-action);
+  font-weight: 600;
+}
+
+@media (max-width: 480px) {
+  body {
+    padding: 12px 8px calc(96px + env(safe-area-inset-bottom));
+  }
+  .toast {
+    left: 8px;
+    right: 8px;
+  }
+}
