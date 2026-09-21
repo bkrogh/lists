@@ -12,8 +12,18 @@
     />
   </head>
   <body>
+    <div id="drawer-backdrop" class="drawer-backdrop"></div>
+    <nav id="drawer" class="drawer" aria-label="Lists">
+      <h2 class="drawer-title">Lists</h2>
+      <ul id="lists" class="lists"></ul>
+      <button id="new-list" class="new-list" type="button"><span aria-hidden="true">+</span> New list</button>
+    </nav>
+
     <main class="card">
       <header class="card-header">
+        <button id="menu-btn" class="menu-btn" type="button" aria-label="Lists" aria-controls="drawer" aria-expanded="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z" /></svg>
+        </button>
         <input id="title" class="title" placeholder="Title" aria-label="List title" autocomplete="off" />
         <div class="actions">
           <button id="import-btn" class="btn" type="button">Import</button>
@@ -49,6 +59,7 @@
         <h2>Import Markdown list</h2>
         <p class="muted">Paste a list from ChatGPT or any Markdown. Headings become parent items, <code>[x]</code> items arrive ticked.</p>
         <textarea id="import-text" rows="12" placeholder="## Groceries&#10;- Milk&#10;- [ ] Eggs&#10;- **Bread**"></textarea>
+        <label class="checkbox-row"><input id="import-as-new" type="checkbox" /> Import as a new list</label>
         <div class="dialog-footer">
           <span id="import-count" class="muted"></span>
           <button value="cancel" class="btn" type="submit">Cancel</button>

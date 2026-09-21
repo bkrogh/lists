@@ -8,13 +8,21 @@ export interface Item {
   indent: 0 | 1;
 }
 
-export interface State {
+export interface List {
+  id: string;
   title: string;
   items: Item[];
   doneCollapsed: boolean;
 }
 
-export const STORAGE_KEY = 'keep-list:v1';
+export interface State {
+  lists: List[];
+  currentId: string;
+}
+
+export const STORAGE_KEY = 'keep-lists:v2';
+/** Single-list format from before multiple lists; migrated on first load and left in place as a backup. */
+const LEGACY_KEY = 'keep-list:v1';
 export const TTL_MS = 5 * 60 * 60 * 1000;
 
 export function newId(): string {
@@ -22,18 +30,20 @@ export function newId(): string {
   return crypto.randomUUID?.() ?? Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
 
-export function emptyState(): State {
-  return { title: '', items: [], doneCollapsed: false };
+export function newList(title = ''): List {
+  return { id: newId(), title, items: [], doneCollapsed: false };
 }
 
 export function load(): State {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) return sanitize(JSON.parse(raw));
+    const legacy = localStorage.getItem(LEGACY_KEY);
+    if (legacy) return sanitize({ lists: [JSON.parse(legacy)] });
   } catch (err) {
-    console.warn('Could not read saved list', err);
+    console.warn('Could not read saved lists', err);
   }
-  return emptyState();
+  return sanitize({});
 }
 
 export function save(state: State): boolean {
@@ -41,35 +51,50 @@ export function save(state: State): boolean {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     return true;
   } catch (err) {
-    console.warn('Could not save list', err);
+    console.warn('Could not save lists', err);
     return false;
   }
 }
 
-/** Removes completed items older than TTL_MS. Returns true if anything was removed. */
+/** Removes completed items older than TTL_MS from every list. Returns true if anything was removed. */
 export function purgeExpired(state: State, now: number): boolean {
-  const before = state.items.length;
-  state.items = state.items.filter((i) => !(i.done && i.doneAt !== null && now - i.doneAt >= TTL_MS));
-  return state.items.length !== before;
+  let changed = false;
+  for (const list of state.lists) {
+    const before = list.items.length;
+    list.items = list.items.filter((i) => !(i.done && i.doneAt !== null && now - i.doneAt >= TTL_MS));
+    changed ||= list.items.length !== before;
+  }
+  return changed;
 }
 
-export function sanitize(data: unknown, now = Date.now()): State {
-  const d = (data ?? {}) as Partial<Record<keyof State, unknown>>;
-  const items = Array.isArray(d.items) ? d.items : [];
+type Loose = Record<string, unknown>;
+const isObject = (v: unknown): v is Loose => typeof v === 'object' && v !== null;
+
+function sanitizeItem(i: Loose, now: number): Item {
+  const done = i.done === true;
   return {
-    title: typeof d.title === 'string' ? d.title : '',
-    doneCollapsed: d.doneCollapsed === true,
-    items: items
-      .filter((i): i is Record<string, unknown> => typeof i === 'object' && i !== null)
-      .map((i) => {
-        const done = i.done === true;
-        return {
-          id: typeof i.id === 'string' ? i.id : newId(),
-          text: typeof i.text === 'string' ? i.text : '',
-          done,
-          doneAt: done ? (typeof i.doneAt === 'number' ? i.doneAt : now) : null,
-          indent: i.indent === 1 ? 1 : 0,
-        };
-      }),
+    id: typeof i.id === 'string' ? i.id : newId(),
+    text: typeof i.text === 'string' ? i.text : '',
+    done,
+    doneAt: done ? (typeof i.doneAt === 'number' ? i.doneAt : now) : null,
+    indent: i.indent === 1 ? 1 : 0,
   };
+}
+
+function sanitizeList(l: Loose, now: number): List {
+  return {
+    id: typeof l.id === 'string' ? l.id : newId(),
+    title: typeof l.title === 'string' ? l.title : '',
+    doneCollapsed: l.doneCollapsed === true,
+    items: (Array.isArray(l.items) ? l.items : []).filter(isObject).map((i) => sanitizeItem(i, now)),
+  };
+}
+
+/** Always returns at least one list, with currentId pointing at an existing list. */
+export function sanitize(data: unknown, now = Date.now()): State {
+  const d = isObject(data) ? data : {};
+  const lists = (Array.isArray(d.lists) ? d.lists : []).filter(isObject).map((l) => sanitizeList(l, now));
+  if (lists.length === 0) lists.push(newList());
+  const currentId = lists.some((l) => l.id === d.currentId) ? (d.currentId as string) : lists[0].id;
+  return { lists, currentId };
 }

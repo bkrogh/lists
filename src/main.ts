@@ -1,7 +1,7 @@
 import Sortable from 'sortablejs';
 import './style.css';
 import { parseMarkdownList, parseTitle, toMarkdown, type ParsedItem } from './markdown';
-import { STORAGE_KEY, TTL_MS, load, newId, purgeExpired, save, type Item, type State } from './store';
+import { STORAGE_KEY, TTL_MS, load, newId, newList, purgeExpired, save, type Item, type List, type State } from './store';
 
 let state: State = load();
 if (purgeExpired(state, Date.now())) save(state);
@@ -22,6 +22,11 @@ const importConfirm = $<HTMLButtonElement>('import-confirm');
 const toastEl = $<HTMLDivElement>('toast');
 const toastMsg = $<HTMLSpanElement>('toast-msg');
 const toastUndo = $<HTMLButtonElement>('toast-undo');
+const importAsNew = $<HTMLInputElement>('import-as-new');
+const menuBtn = $<HTMLButtonElement>('menu-btn');
+const drawer = $<HTMLElement>('drawer');
+const drawerBackdrop = $<HTMLDivElement>('drawer-backdrop');
+const listsEl = $<HTMLUListElement>('lists');
 
 const GRIP =
   '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg>';
@@ -32,9 +37,10 @@ let rendering = false;
 
 // ---------- state helpers ----------
 
-const active = () => state.items.filter((i) => !i.done);
-const completed = () => state.items.filter((i) => i.done).sort((a, b) => (b.doneAt ?? 0) - (a.doneAt ?? 0));
-const find = (id: string | undefined) => state.items.find((i) => i.id === id);
+const current = (): List => state.lists.find((l) => l.id === state.currentId) ?? state.lists[0];
+const active = () => current().items.filter((i) => !i.done);
+const completed = () => current().items.filter((i) => i.done).sort((a, b) => (b.doneAt ?? 0) - (a.doneAt ?? 0));
+const find = (id: string | undefined) => current().items.find((i) => i.id === id);
 const idOf = (el: EventTarget | null) => (el as HTMLElement | null)?.closest<HTMLElement>('.item')?.dataset.id;
 
 let saveFailed = false;
@@ -47,7 +53,7 @@ function commit() {
 }
 
 function remove(item: Item) {
-  state.items = state.items.filter((i) => i !== item);
+  current().items = current().items.filter((i) => i !== item);
 }
 
 function toggle(id: string, done: boolean) {
@@ -70,7 +76,7 @@ function toggle(id: string, done: boolean) {
     item.doneAt = null;
     item.indent = 0;
     remove(item);
-    state.items.push(item);
+    current().items.push(item);
   }
   commit();
   render();
@@ -80,23 +86,92 @@ function move(item: Item, dir: -1 | 1) {
   const act = active();
   const other = act[act.indexOf(item) + dir];
   if (!other) return;
-  const a = state.items.indexOf(item);
-  const b = state.items.indexOf(other);
-  [state.items[a], state.items[b]] = [other, item];
+  const items = current().items;
+  const a = items.indexOf(item);
+  const b = items.indexOf(other);
+  [items[a], items[b]] = [other, item];
   commit();
 }
 
-function insertParsed(parsed: ParsedItem[], afterId: string | null, title = '') {
+function insertParsed(parsed: ParsedItem[], afterId: string | null, title = '', takeSnapshot = true) {
   if (!parsed.length) return;
-  snapshot();
-  if (title && !state.title.trim()) state.title = title;
+  if (takeSnapshot) snapshot();
+  if (title && !current().title.trim()) current().title = title;
   const now = Date.now();
   const items: Item[] = parsed.map((p) => ({ id: newId(), text: p.text, done: p.done, doneAt: p.done ? now : null, indent: p.indent }));
-  const at = afterId ? state.items.findIndex((i) => i.id === afterId) + 1 : state.items.length;
-  state.items.splice(at, 0, ...items);
+  const list = current();
+  const at = afterId ? list.items.findIndex((i) => i.id === afterId) + 1 : list.items.length;
+  list.items.splice(at, 0, ...items);
   commit();
   render();
   toast(`Added ${items.length} item${items.length === 1 ? '' : 's'}`, true);
+}
+
+// ---------- lists ----------
+
+const listName = (l: List) => l.title.trim() || 'Untitled list';
+
+function switchTo(id: string) {
+  if (!state.lists.some((l) => l.id === id)) return;
+  state.currentId = id;
+  commit();
+  render();
+}
+
+function createList(title = ''): List {
+  const list = newList(title);
+  state.lists.push(list);
+  state.currentId = list.id;
+  commit();
+  render();
+  return list;
+}
+
+function deleteList(id: string) {
+  const idx = state.lists.findIndex((l) => l.id === id);
+  if (idx < 0) return;
+  snapshot();
+  const [gone] = state.lists.splice(idx, 1);
+  if (state.lists.length === 0) state.lists.push(newList());
+  if (state.currentId === id) state.currentId = state.lists[Math.min(idx, state.lists.length - 1)].id;
+  commit();
+  render();
+  toast(`Deleted “${listName(gone)}”`, true);
+}
+
+function openDrawer() {
+  drawer.classList.add('open');
+  drawerBackdrop.classList.add('open');
+  drawer.inert = false;
+  menuBtn.setAttribute('aria-expanded', 'true');
+  listsEl.querySelector<HTMLButtonElement>('.current .list-name')?.focus();
+}
+
+function closeDrawer(restoreFocus = true) {
+  if (!drawer.classList.contains('open')) return;
+  drawer.classList.remove('open');
+  drawerBackdrop.classList.remove('open');
+  drawer.inert = true;
+  menuBtn.setAttribute('aria-expanded', 'false');
+  if (restoreFocus) menuBtn.focus();
+}
+
+function renderDrawer() {
+  listsEl.replaceChildren(
+    ...state.lists.map((l) => {
+      const li = document.createElement('li');
+      li.className = 'list-row' + (l.id === state.currentId ? ' current' : '');
+      li.dataset.id = l.id;
+      li.innerHTML = `
+        <button type="button" class="list-name"><span class="name"></span><span class="count"></span></button>
+        <button type="button" class="list-del" title="Delete list" aria-label="Delete list">×</button>`;
+      li.querySelector('.name')!.textContent = listName(l);
+      const open = l.items.filter((i) => !i.done).length;
+      li.querySelector('.count')!.textContent = open ? String(open) : '';
+      if (l.id === state.currentId) li.querySelector('.list-name')!.setAttribute('aria-current', 'true');
+      return li;
+    }),
+  );
 }
 
 // ---------- undo toast ----------
@@ -181,16 +256,18 @@ function render(focus?: { id: string; caret: number }) {
   const now = Date.now();
   const done = completed();
   rendering = true;
-  if (document.activeElement !== titleEl) titleEl.value = state.title;
+  if (document.activeElement !== titleEl) titleEl.value = current().title;
   activeEl.replaceChildren(...active().map((i) => itemEl(i, now)));
   doneEl.replaceChildren(...done.map((i) => itemEl(i, now)));
   rendering = false;
 
-  emptyHint.hidden = state.items.length > 0;
+  emptyHint.hidden = current().items.length > 0;
   doneSection.hidden = done.length === 0;
-  doneSection.classList.toggle('collapsed', state.doneCollapsed);
-  doneToggle.setAttribute('aria-expanded', String(!state.doneCollapsed));
+  doneSection.classList.toggle('collapsed', current().doneCollapsed);
+  doneToggle.setAttribute('aria-expanded', String(!current().doneCollapsed));
   doneCount.textContent = `${done.length} ticked item${done.length === 1 ? '' : 's'}`;
+  document.title = current().title.trim() || 'Lists';
+  renderDrawer();
 
   document.querySelectorAll<HTMLTextAreaElement>('.item textarea').forEach(fit);
   if (focus) focusItem(focus.id, focus.caret);
@@ -250,7 +327,7 @@ for (const list of [activeEl, doneEl]) {
     remove(item);
     commit();
     ta.closest('.item')?.remove();
-    emptyHint.hidden = state.items.length > 0;
+    emptyHint.hidden = current().items.length > 0;
   });
 
   list.addEventListener('paste', (e) => {
@@ -281,7 +358,8 @@ activeEl.addEventListener('keydown', (e) => {
     e.preventDefault();
     item.text = value.slice(0, start);
     const created: Item = { id: newId(), text: value.slice(end), done: false, doneAt: null, indent: item.indent };
-    state.items.splice(state.items.indexOf(item) + 1, 0, created);
+    const items = current().items;
+    items.splice(items.indexOf(item) + 1, 0, created);
     commit();
     render({ id: created.id, caret: 0 });
   } else if (e.key === 'Backspace' && start === 0 && end === 0) {
@@ -345,7 +423,7 @@ function syncFromDom() {
     if (!item.done) Object.assign(item, { done: true, doneAt: now });
     next.push(item);
   }
-  state.items = next;
+  current().items = next;
   commit();
   render();
 }
@@ -365,14 +443,16 @@ Sortable.create(doneEl, { ...sortableOptions, sort: false });
 // ---------- header, add row, completed section ----------
 
 titleEl.addEventListener('input', () => {
-  state.title = titleEl.value;
+  current().title = titleEl.value;
   commit();
+  renderDrawer();
+  document.title = current().title.trim() || 'Lists';
 });
 
 function addFromInput() {
   const text = addInput.value.trim();
   if (!text) return;
-  state.items.push({ id: newId(), text, done: false, doneAt: null, indent: 0 });
+  current().items.push({ id: newId(), text, done: false, doneAt: null, indent: 0 });
   addInput.value = '';
   commit();
   render();
@@ -400,14 +480,14 @@ addInput.addEventListener('paste', (e) => {
 });
 
 doneToggle.addEventListener('click', () => {
-  state.doneCollapsed = !state.doneCollapsed;
+  current().doneCollapsed = !current().doneCollapsed;
   commit();
   render();
 });
 
 $<HTMLButtonElement>('clear-done').addEventListener('click', () => {
   snapshot();
-  state.items = active();
+  current().items = active();
   commit();
   render();
   toast('Ticked items deleted', true);
@@ -417,6 +497,7 @@ $<HTMLButtonElement>('clear-done').addEventListener('click', () => {
 
 $<HTMLButtonElement>('import-btn').addEventListener('click', () => {
   importText.value = '';
+  importAsNew.checked = current().items.length > 0;
   updateImportCount();
   importDialog.showModal();
   importText.focus();
@@ -430,23 +511,68 @@ function updateImportCount() {
 importText.addEventListener('input', updateImportCount);
 
 importDialog.addEventListener('close', () => {
-  if (importDialog.returnValue === 'import') insertParsed(parseMarkdownList(importText.value), null, parseTitle(importText.value));
+  if (importDialog.returnValue === 'import') {
+    const md = importText.value;
+    snapshot();
+    if (importAsNew.checked) createList();
+    insertParsed(parseMarkdownList(md), null, parseTitle(md), false);
+  }
   importDialog.returnValue = '';
 });
 
 $<HTMLButtonElement>('export-btn').addEventListener('click', async () => {
-  const md = toMarkdown(state.title, active(), completed());
+  const md = toMarkdown(current().title, active(), completed());
   try {
     await navigator.clipboard.writeText(md);
     toast('Copied as Markdown');
   } catch {
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([md], { type: 'text/markdown' }));
-    a.download = `${state.title.trim() || 'list'}.md`;
+    a.download = `${current().title.trim() || 'list'}.md`;
     a.click();
     URL.revokeObjectURL(a.href);
     toast('Downloaded as Markdown');
   }
+});
+
+// ---------- lists menu ----------
+
+drawer.inert = true;
+menuBtn.addEventListener('click', openDrawer);
+drawerBackdrop.addEventListener('click', () => closeDrawer());
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && drawer.classList.contains('open')) closeDrawer();
+});
+
+listsEl.addEventListener('click', (e) => {
+  const target = e.target as HTMLElement;
+  const id = target.closest<HTMLElement>('.list-row')?.dataset.id;
+  if (!id) return;
+  if (target.closest('.list-del')) {
+    deleteList(id);
+  } else {
+    switchTo(id);
+    closeDrawer(false);
+    addInput.focus();
+  }
+});
+
+$<HTMLButtonElement>('new-list').addEventListener('click', () => {
+  createList();
+  closeDrawer(false);
+  titleEl.focus();
+});
+
+Sortable.create(listsEl, {
+  animation: 150,
+  delay: 200,
+  delayOnTouchOnly: true,
+  ghostClass: 'ghost',
+  onEnd: () => {
+    const order = [...listsEl.children].map((li) => (li as HTMLElement).dataset.id);
+    state.lists.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
+    commit();
+  },
 });
 
 // ---------- lifecycle ----------
@@ -454,7 +580,9 @@ $<HTMLButtonElement>('export-btn').addEventListener('click', async () => {
 // Keep multiple open tabs in sync.
 window.addEventListener('storage', (e) => {
   if (e.key !== STORAGE_KEY) return;
+  const viewing = state.currentId;
   state = load();
+  if (state.lists.some((l) => l.id === viewing)) state.currentId = viewing;
   render();
 });
 

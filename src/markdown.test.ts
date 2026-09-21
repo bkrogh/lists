@@ -1,6 +1,10 @@
+// Minimal localStorage stand-in for the Node test environment.
+const mem = new Map<string, string>();
+globalThis.localStorage ??= { getItem: (k: string) => mem.get(k) ?? null, setItem: (k: string, v: string) => void mem.set(k, v), removeItem: (k: string) => void mem.delete(k), clear: () => mem.clear(), key: () => null, length: 0 } as Storage;
+
 import { describe, expect, it } from 'vitest';
 import { parseMarkdownList, parseTitle, toMarkdown } from './markdown';
-import { TTL_MS, purgeExpired, sanitize, type Item } from './store';
+import { TTL_MS, load, purgeExpired, sanitize, type Item } from './store';
 
 describe('parseMarkdownList', () => {
   it('parses bullets, numbers and task checkboxes', () => {
@@ -74,24 +78,42 @@ describe('toMarkdown', () => {
 });
 
 describe('store', () => {
-  it('purges ticked items older than 5 hours only', () => {
+  it('purges ticked items older than 5 hours only, across all lists', () => {
     const now = 10 * TTL_MS;
     const state = sanitize({
-      items: [
-        { id: 'a', text: 'old', done: true, doneAt: now - TTL_MS },
-        { id: 'b', text: 'recent', done: true, doneAt: now - TTL_MS + 1 },
-        { id: 'c', text: 'open', done: false },
+      lists: [
+        {
+          items: [
+            { id: 'a', text: 'old', done: true, doneAt: now - TTL_MS },
+            { id: 'b', text: 'recent', done: true, doneAt: now - TTL_MS + 1 },
+            { id: 'c', text: 'open', done: false },
+          ],
+        },
+        { items: [{ id: 'd', text: 'old too', done: true, doneAt: 0 }] },
       ],
     });
     expect(purgeExpired(state, now)).toBe(true);
-    expect(state.items.map((i) => i.id)).toEqual(['b', 'c']);
+    expect(state.lists.map((l) => l.items.map((i) => i.id))).toEqual([['b', 'c'], []]);
     expect(purgeExpired(state, now)).toBe(false);
   });
 
-  it('sanitizes bad data', () => {
-    const s = sanitize({ title: 3, items: [null, { text: 'x', done: true }] }, 42);
-    expect(s.title).toBe('');
-    expect(s.items).toHaveLength(1);
-    expect(s.items[0]).toMatchObject({ text: 'x', done: true, doneAt: 42, indent: 0 });
+  it('sanitizes bad data and always has a current list', () => {
+    const empty = sanitize(null);
+    expect(empty.lists).toHaveLength(1);
+    expect(empty.currentId).toBe(empty.lists[0].id);
+
+    const s = sanitize({ currentId: 'nope', lists: [{ id: 'L', title: 3, items: [null, { text: 'x', done: true }] }] }, 42);
+    expect(s.currentId).toBe('L');
+    expect(s.lists[0].title).toBe('');
+    expect(s.lists[0].items).toHaveLength(1);
+    expect(s.lists[0].items[0]).toMatchObject({ text: 'x', done: true, doneAt: 42, indent: 0 });
+  });
+
+  it('migrates the old single-list format', () => {
+    localStorage.setItem('keep-list:v1', JSON.stringify({ title: 'Old', doneCollapsed: true, items: [{ id: 'i', text: 'Milk', done: false }] }));
+    const s = load();
+    expect(s.lists).toHaveLength(1);
+    expect(s.lists[0]).toMatchObject({ title: 'Old', doneCollapsed: true, items: [{ id: 'i', text: 'Milk' }] });
+    expect(s.currentId).toBe(s.lists[0].id);
   });
 });
