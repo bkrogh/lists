@@ -1,7 +1,7 @@
 import Sortable from 'sortablejs';
 import './style.css';
 import { parseMarkdownList, parseTitle, toMarkdown, type ParsedItem } from './markdown';
-import { STORAGE_KEY, expireTicked, load, newId, newList, save, ttlMs, type ExpireMode, type Item, type List, type State } from './store';
+import { STORAGE_KEY, expireTicked, load, newId, newList, save, setDone, tickedView, ttlMs, type ExpireMode, type Item, type List, type State } from './store';
 
 let state: State = load();
 if (expireTicked(state, Date.now())) save(state);
@@ -34,6 +34,10 @@ const expireHours = $<HTMLInputElement>('expire-hours');
 
 const GRIP =
   '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg>';
+const INDENT_ICON =
+  '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 21h18v-2H3v2zM3 8v8l4-4-4-4zm8 9h10v-2H11v2zM3 3v2h18V3H3zm8 6h10V7H11v2zm0 4h10v-2H11v2z"/></svg>';
+const OUTDENT_ICON =
+  '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 17h10v-2H11v2zm-8-5l4 4V8l-4 4zm0 9h18v-2H3v2zM3 3v2h18V3H3zm8 6h10V7H11v2zm0 4h10v-2H11v2z"/></svg>';
 const AUTOSIZE_IN_CSS = CSS.supports('field-sizing', 'content');
 
 /** Set while the lists are rebuilt, so focusout from removed textareas is ignored. */
@@ -43,7 +47,6 @@ let rendering = false;
 
 const current = (): List => state.lists.find((l) => l.id === state.currentId) ?? state.lists[0];
 const active = () => current().items.filter((i) => !i.done);
-const completed = () => current().items.filter((i) => i.done).sort((a, b) => (b.doneAt ?? 0) - (a.doneAt ?? 0));
 const find = (id: string | undefined) => current().items.find((i) => i.id === id);
 const idOf = (el: EventTarget | null) => (el as HTMLElement | null)?.closest<HTMLElement>('.item')?.dataset.id;
 
@@ -63,25 +66,7 @@ function remove(item: Item) {
 function toggle(id: string, done: boolean) {
   const item = find(id);
   if (!item) return;
-  if (done) {
-    const now = Date.now();
-    const act = active();
-    item.done = true;
-    item.doneAt = now;
-    // Ticking a parent ticks its sub-items too.
-    if (item.indent === 0) {
-      for (let j = act.indexOf(item) + 1; j < act.length && act[j].indent === 1; j++) {
-        act[j].done = true;
-        act[j].doneAt = now;
-      }
-    }
-  } else {
-    item.done = false;
-    item.doneAt = null;
-    item.indent = 0;
-    remove(item);
-    current().items.push(item);
-  }
+  setDone(current(), item, done, Date.now());
   commit();
   render();
 }
@@ -222,15 +207,16 @@ function duration(ms: number): string {
 const remaining = (doneAt: number | null, now: number) => duration((doneAt ?? now) + ttlMs(current()) - now);
 const expiryVerb = () => (current().expireMode === 'reset' ? 'unticked' : 'deleted');
 
-function itemEl(item: Item, now: number): HTMLLIElement {
+function itemEl(item: Item, now: number, indent = item.indent): HTMLLIElement {
   const li = document.createElement('li');
-  li.className = 'item' + (item.indent ? ' indent' : '') + (item.done ? ' done' : '');
+  li.className = 'item' + (indent ? ' indent' : '') + (item.done ? ' done' : '');
   li.dataset.id = item.id;
   li.innerHTML = `
     <span class="handle" title="Drag to move">${GRIP}</span>
     <input type="checkbox" class="check" aria-label="Done" />
     <textarea class="text" rows="1" aria-label="Item"></textarea>
     ${item.done ? `<span class="expiry" title="Time until this item is ${expiryVerb()}"></span>` : ''}
+    ${item.done ? '' : `<button type="button" class="indent-btn" title="${item.indent ? 'Unindent' : 'Indent'}" aria-label="${item.indent ? 'Unindent' : 'Indent'}">${item.indent ? OUTDENT_ICON : INDENT_ICON}</button>`}
     <button type="button" class="del" title="Delete" aria-label="Delete">×</button>`;
   li.querySelector<HTMLInputElement>('.check')!.checked = item.done;
   li.querySelector('textarea')!.value = item.text;
@@ -261,11 +247,11 @@ function render(focus?: { id: string; caret: number }) {
   }
 
   const now = Date.now();
-  const done = completed();
+  const done = tickedView(current());
   rendering = true;
   if (document.activeElement !== titleEl) titleEl.value = current().title;
   activeEl.replaceChildren(...active().map((i) => itemEl(i, now)));
-  doneEl.replaceChildren(...done.map((i) => itemEl(i, now)));
+  doneEl.replaceChildren(...done.map((e) => itemEl(e.item, now, e.indent)));
   rendering = false;
 
   emptyHint.hidden = current().items.length > 0;
@@ -369,7 +355,10 @@ activeEl.addEventListener('keydown', (e) => {
     item.text = value.slice(0, start);
     const created: Item = { id: newId(), text: value.slice(end), done: false, doneAt: null, indent: item.indent };
     const items = current().items;
-    items.splice(items.indexOf(item) + 1, 0, created);
+    // Go after any ticked sub-items too, so they stay with their parent.
+    let at = items.indexOf(item) + 1;
+    while (items[at]?.done && items[at].indent === 1) at++;
+    items.splice(at, 0, created);
     commit();
     render({ id: created.id, caret: 0 });
   } else if (e.key === 'Backspace' && start === 0 && end === 0) {
@@ -407,6 +396,22 @@ activeEl.addEventListener('keydown', (e) => {
   }
 });
 
+// Tapping the indent button must not take focus from the item, or the on-screen keyboard closes.
+activeEl.addEventListener('pointerdown', (e) => {
+  if ((e.target as HTMLElement).closest('.indent-btn')) e.preventDefault();
+});
+
+activeEl.addEventListener('click', (e) => {
+  const btn = (e.target as HTMLElement).closest('.indent-btn');
+  const item = find(idOf(btn));
+  if (!item) return;
+  const act = active();
+  item.indent = item.indent || act.indexOf(item) === 0 ? 0 : 1;
+  commit();
+  const ta = btn!.closest('.item')!.querySelector('textarea')!;
+  render({ id: item.id, caret: document.activeElement === ta ? ta.selectionStart : -1 });
+});
+
 doneEl.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && e.target instanceof HTMLTextAreaElement) {
     e.preventDefault();
@@ -416,24 +421,20 @@ doneEl.addEventListener('keydown', (e) => {
 
 // ---------- drag and drop ----------
 
-/** Rebuilds item order and done-state from the DOM after a drag. */
-function syncFromDom() {
-  const ids = (list: HTMLElement) => [...list.children].map((li) => (li as HTMLElement).dataset.id);
-  const now = Date.now();
-  const next: Item[] = [];
-  for (const id of ids(activeEl)) {
-    const item = find(id);
-    if (!item) continue;
-    if (item.done) Object.assign(item, { done: false, doneAt: null, indent: 0 });
-    next.push(item);
+/** Applies a drag: into the ticked section ticks, otherwise the item moves to where it was dropped (unticking it). */
+function onDragEnd(e: Sortable.SortableEvent) {
+  const item = find(e.item.dataset.id);
+  if (!item) return;
+  if (e.to === doneEl) {
+    if (!item.done) setDone(current(), item, true, Date.now());
+  } else {
+    // Ticked items are hidden from the to-do list, so place it before the item it was dropped above.
+    Object.assign(item, { done: false, doneAt: null });
+    remove(item);
+    const items = current().items;
+    const next = find((e.item.nextElementSibling as HTMLElement | null)?.dataset.id);
+    items.splice(next ? items.indexOf(next) : items.length, 0, item);
   }
-  for (const id of ids(doneEl)) {
-    const item = find(id);
-    if (!item) continue;
-    if (!item.done) Object.assign(item, { done: true, doneAt: now });
-    next.push(item);
-  }
-  current().items = next;
   commit();
   render();
 }
@@ -445,7 +446,7 @@ const sortableOptions: Sortable.Options = {
   ghostClass: 'ghost',
   chosenClass: 'chosen',
   dragClass: 'dragging',
-  onEnd: syncFromDom,
+  onEnd: onDragEnd,
 };
 Sortable.create(activeEl, sortableOptions);
 Sortable.create(doneEl, { ...sortableOptions, sort: false });
@@ -554,7 +555,7 @@ importDialog.addEventListener('close', () => {
 });
 
 $<HTMLButtonElement>('export-btn').addEventListener('click', async () => {
-  const md = toMarkdown(current().title, active(), completed());
+  const md = toMarkdown(current().title, current().items);
   try {
     await navigator.clipboard.writeText(md);
     toast('Copied as Markdown');

@@ -5,10 +5,11 @@ Google Keep–style checklists that run entirely in the browser. Data is stored 
 ## Features
 
 - **Multiple lists**: open the ☰ menu to switch lists, add a new list, delete one (with undo) or drag lists into a different order.
-- Checklist with a **ticked items** section below; ticking an item moves it down (ticking a parent ticks its sub-items).
+- Checklist with a **ticked items** section below; ticking an item moves it down (ticking a parent ticks its sub-items). Ticked items keep their place in the tree, so unticking puts a sub-item back under its parent.
 - Ticked items **delete themselves 5 hours** after being ticked (countdown shown per item). Use the clock button to change the time per list, or to have ticked items **untick themselves** instead (handy for lists you repeat).
 - **Import Markdown** lists (e.g. from ChatGPT) via the *Import* button (into the current list or as a new list), or just paste a multi-line list into any item / the "List item" row. `## Headings` and `**Bold:**` lines become parent items, `[x]` items arrive ticked, a `# Title` fills in the list title.
 - **Drag and drop** by the ⠿ handle (works on touch). Drag into the ticked section to tick, or back out to untick.
+- **Indent** an item with the indent button at the end of its row (on touch screens it shows on the item you are editing), or with Tab.
 - *Copy* exports the list as Markdown (a handy backup).
 - Undo for deletes and imports. Syncs between open tabs.
 

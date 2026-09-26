@@ -86,10 +86,11 @@ export function parseTitle(md: string): string {
   return '';
 }
 
-export function toMarkdown(title: string, active: Item[], done: Item[]): string {
+/** Exports items in list order, so ticked sub-items stay under their parent. */
+export function toMarkdown(title: string, items: Item[]): string {
   const line = (i: Item) => `${i.indent ? '  ' : ''}- [${i.done ? 'x' : ' '}] ${i.text}`;
   const parts = [];
   if (title.trim()) parts.push(`# ${title.trim()}`, '');
-  parts.push(...active.map(line), ...done.map(line));
+  parts.push(...items.map(line));
   return parts.join('\n') + '\n';
 }

@@ -287,6 +287,50 @@ textarea {
   }
 }
 
+.indent-btn {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.indent-btn svg {
+  width: 18px;
+  height: 18px;
+  fill: var(--muted);
+}
+
+.indent-btn:hover {
+  background: var(--hover);
+}
+
+.item:hover .indent-btn,
+.item:focus-within .indent-btn,
+.indent-btn:focus-visible {
+  opacity: 1;
+}
+
+/* The first item can't be indented. */
+#active > .item:first-child .indent-btn {
+  visibility: hidden;
+}
+
+/* On touch screens, only show it for the item being edited to keep rows uncluttered. */
+@media (hover: none) {
+  .indent-btn {
+    display: none;
+  }
+  .item:focus-within .indent-btn {
+    display: grid;
+  }
+}
+
 /* drag states */
 .ghost {
   opacity: 0.4;

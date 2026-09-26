@@ -4,7 +4,7 @@ globalThis.localStorage ??= { getItem: (k: string) => mem.get(k) ?? null, setIte
 
 import { describe, expect, it } from 'vitest';
 import { parseMarkdownList, parseTitle, toMarkdown } from './markdown';
-import { expireTicked, load, sanitize, type Item } from './store';
+import { expireTicked, load, sanitize, setDone, tickedView, type Item } from './store';
 
 describe('parseMarkdownList', () => {
   it('parses bullets, numbers and task checkboxes', () => {
@@ -67,7 +67,7 @@ describe('toMarkdown', () => {
       { id: '2', text: 'Child', done: false, doneAt: null, indent: 1 },
       { id: '3', text: 'Done', done: true, doneAt: 1, indent: 0 },
     ];
-    const md = toMarkdown('List', items.slice(0, 2), items.slice(2));
+    const md = toMarkdown('List', items);
     expect(md).toBe('# List\n\n- [ ] Parent\n  - [ ] Child\n- [x] Done\n');
     expect(parseMarkdownList(md).map((p) => [p.text, p.done, p.indent])).toEqual([
       ['Parent', false, 0],
@@ -151,4 +151,60 @@ describe('store', () => {
     expect(s.lists[0]).toMatchObject({ title: 'Old', doneCollapsed: true, items: [{ id: 'i', text: 'Milk' }] });
     expect(s.currentId).toBe(s.lists[0].id);
   });
+
+describe('tree', () => {
+  const tree = () =>
+    sanitize({
+      lists: [
+        {
+          items: [
+            { id: 'P', text: 'Parent', indent: 0 },
+            { id: 'a', text: 'a', indent: 1 },
+            { id: 'b', text: 'b', indent: 1 },
+            { id: 'Q', text: 'Other', indent: 0 },
+          ],
+        },
+      ],
+    }).lists[0];
+  const byId = (l: ReturnType<typeof tree>, id: string) => l.items.find((i) => i.id === id)!;
+  const state = (l: ReturnType<typeof tree>) => l.items.map((i) => `${i.id}${i.done ? 'x' : ''}${i.indent ? '>' : ''}`).join(' ');
+
+  it('ticking a parent ticks its sub-items and keeps everything in place', () => {
+    const l = tree();
+    setDone(l, byId(l, 'P'), true, 5);
+    expect(state(l)).toBe('Px ax> bx> Q');
+  });
+
+  it('unticking a sub-item puts it back under its parent, unticking the parent too', () => {
+    const l = tree();
+    setDone(l, byId(l, 'P'), true, 5);
+    setDone(l, byId(l, 'b'), false, 6);
+    expect(state(l)).toBe('P ax> b> Q');
+  });
+
+  it('unticking a parent unticks its sub-items', () => {
+    const l = tree();
+    setDone(l, byId(l, 'a'), true, 1);
+    setDone(l, byId(l, 'P'), true, 2);
+    setDone(l, byId(l, 'P'), false, 3);
+    expect(state(l)).toBe('P a> b> Q');
+  });
+
+  it('shows ticked items grouped under ticked parents, most recent group first', () => {
+    const l = tree();
+    setDone(l, byId(l, 'b'), true, 1);
+    setDone(l, byId(l, 'Q'), true, 2);
+    expect(tickedView(l).map((e) => [e.item.id, e.indent])).toEqual([
+      ['Q', 0],
+      ['b', 0],
+    ]);
+    setDone(l, byId(l, 'P'), true, 3);
+    expect(tickedView(l).map((e) => [e.item.id, e.indent])).toEqual([
+      ['P', 0],
+      ['a', 1],
+      ['b', 1],
+      ['Q', 0],
+    ]);
+  });
+});
 });

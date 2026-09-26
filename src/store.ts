@@ -118,3 +118,57 @@ export function sanitize(data: unknown, now = Date.now()): State {
   const currentId = lists.some((l) => l.id === d.currentId) ? (d.currentId as string) : lists[0].id;
   return { lists, currentId };
 }
+
+// ---------- tree ----------
+// A list's items array is the tree: an indented item belongs to the nearest top-level item above it.
+// Ticked items stay where they are in the array, so unticking puts them back under their parent.
+
+function parentIndex(items: Item[], idx: number): number {
+  if (items[idx].indent === 0) return -1;
+  for (let j = idx - 1; j >= 0; j--) if (items[j].indent === 0) return j;
+  return -1;
+}
+
+function childIndexes(items: Item[], idx: number): number[] {
+  const out = [];
+  if (items[idx].indent === 0) for (let j = idx + 1; j < items.length && items[j].indent === 1; j++) out.push(j);
+  return out;
+}
+
+/**
+ * Ticks or unticks an item. Ticking a parent ticks its open sub-items; unticking a parent unticks its sub-items,
+ * and unticking a sub-item unticks its parent so it has somewhere to go.
+ */
+export function setDone(list: List, item: Item, done: boolean, now: number) {
+  const items = list.items;
+  const idx = items.indexOf(item);
+  if (idx < 0) return;
+  const set = (i: Item) => {
+    if (i.done === done) return;
+    i.done = done;
+    i.doneAt = done ? now : null;
+  };
+  set(item);
+  for (const j of childIndexes(items, idx)) set(items[j]);
+  if (!done) {
+    const p = parentIndex(items, idx);
+    if (p >= 0) set(items[p]);
+  }
+}
+
+/**
+ * The ticked items as shown in the ticked section: each ticked parent followed by its ticked sub-items, most recently
+ * ticked group first. Ticked sub-items whose parent is still open are shown on their own, unindented.
+ */
+export function tickedView(list: List): { item: Item; indent: 0 | 1 }[] {
+  const groups: { item: Item; indent: 0 | 1 }[][] = [];
+  const items = list.items;
+  items.forEach((item, idx) => {
+    if (!item.done) return;
+    const p = parentIndex(items, idx);
+    if (p >= 0 && items[p].done) return; // listed with its parent
+    groups.push([{ item, indent: 0 }, ...childIndexes(items, idx).filter((j) => items[j].done).map((j) => ({ item: items[j], indent: 1 as const }))]);
+  });
+  const latest = (g: { item: Item }[]) => Math.max(...g.map((e) => e.item.doneAt ?? 0));
+  return groups.sort((a, b) => latest(b) - latest(a)).flat();
+}
