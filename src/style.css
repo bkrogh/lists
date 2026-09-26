@@ -68,7 +68,8 @@ textarea {
   padding: 4px 12px 4px 4px;
 }
 
-.menu-btn {
+.menu-btn,
+.icon-btn {
   flex: none;
   width: 40px;
   height: 40px;
@@ -80,11 +81,13 @@ textarea {
   cursor: pointer;
 }
 
-.menu-btn:hover {
+.menu-btn:hover,
+.icon-btn:hover {
   background: var(--hover);
 }
 
-.menu-btn svg {
+.menu-btn svg,
+.icon-btn svg {
   width: 22px;
   height: 22px;
   fill: var(--muted);
@@ -541,6 +544,15 @@ textarea {
 
 /* ---------- footer, dialog, toast ---------- */
 
+.hours {
+  width: 5em;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  padding: 4px 6px;
+  font: inherit;
+}
 .footer {
   max-width: 600px;
   margin: 16px auto 0;

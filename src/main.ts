@@ -1,10 +1,10 @@
 import Sortable from 'sortablejs';
 import './style.css';
 import { parseMarkdownList, parseTitle, toMarkdown, type ParsedItem } from './markdown';
-import { STORAGE_KEY, TTL_MS, load, newId, newList, purgeExpired, save, type Item, type List, type State } from './store';
+import { STORAGE_KEY, expireTicked, load, newId, newList, save, ttlMs, type ExpireMode, type Item, type List, type State } from './store';
 
 let state: State = load();
-if (purgeExpired(state, Date.now())) save(state);
+if (expireTicked(state, Date.now())) save(state);
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const titleEl = $<HTMLInputElement>('title');
@@ -27,6 +27,10 @@ const menuBtn = $<HTMLButtonElement>('menu-btn');
 const drawer = $<HTMLElement>('drawer');
 const drawerBackdrop = $<HTMLDivElement>('drawer-backdrop');
 const listsEl = $<HTMLUListElement>('lists');
+const expiryBtn = $<HTMLButtonElement>('expiry-btn');
+const expiryNote = $<HTMLSpanElement>('expiry-note');
+const expiryDialog = $<HTMLDialogElement>('expiry-dialog');
+const expireHours = $<HTMLInputElement>('expire-hours');
 
 const GRIP =
   '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg>';
@@ -199,7 +203,7 @@ toastUndo.addEventListener('click', () => {
   if (undoSnapshot) {
     state = JSON.parse(undoSnapshot) as State;
     undoSnapshot = null;
-    purgeExpired(state, Date.now());
+    expireTicked(state, Date.now());
     commit();
     render();
   }
@@ -208,12 +212,15 @@ toastUndo.addEventListener('click', () => {
 
 // ---------- rendering ----------
 
-function remaining(doneAt: number | null, now: number): string {
-  const mins = Math.ceil(Math.max(0, (doneAt ?? now) + TTL_MS - now) / 60000);
+function duration(ms: number): string {
+  const mins = Math.ceil(Math.max(0, ms) / 60000);
   const h = Math.floor(mins / 60);
   const m = mins % 60;
-  return h ? `${h}h ${m}m` : `${m}m`;
+  return h ? (m ? `${h}h ${m}m` : `${h}h`) : `${m}m`;
 }
+
+const remaining = (doneAt: number | null, now: number) => duration((doneAt ?? now) + ttlMs(current()) - now);
+const expiryVerb = () => (current().expireMode === 'reset' ? 'unticked' : 'deleted');
 
 function itemEl(item: Item, now: number): HTMLLIElement {
   const li = document.createElement('li');
@@ -223,7 +230,7 @@ function itemEl(item: Item, now: number): HTMLLIElement {
     <span class="handle" title="Drag to move">${GRIP}</span>
     <input type="checkbox" class="check" aria-label="Done" />
     <textarea class="text" rows="1" aria-label="Item"></textarea>
-    ${item.done ? '<span class="expiry" title="Time until this item is deleted"></span>' : ''}
+    ${item.done ? `<span class="expiry" title="Time until this item is ${expiryVerb()}"></span>` : ''}
     <button type="button" class="del" title="Delete" aria-label="Delete">×</button>`;
   li.querySelector<HTMLInputElement>('.check')!.checked = item.done;
   li.querySelector('textarea')!.value = item.text;
@@ -267,6 +274,9 @@ function render(focus?: { id: string; caret: number }) {
   doneToggle.setAttribute('aria-expanded', String(!current().doneCollapsed));
   doneCount.textContent = `${done.length} ticked item${done.length === 1 ? '' : 's'}`;
   document.title = current().title.trim() || 'Lists';
+  const expiryText = `Ticked items are ${expiryVerb()} after ${duration(ttlMs(current()))}.`;
+  expiryNote.textContent = expiryText;
+  expiryBtn.title = expiryText;
   renderDrawer();
 
   document.querySelectorAll<HTMLTextAreaElement>('.item textarea').forEach(fit);
@@ -282,7 +292,7 @@ function refreshExpiry() {
 }
 
 function tick() {
-  if (purgeExpired(state, Date.now())) {
+  if (expireTicked(state, Date.now())) {
     commit();
     render();
   } else {
@@ -491,6 +501,29 @@ $<HTMLButtonElement>('clear-done').addEventListener('click', () => {
   commit();
   render();
   toast('Ticked items deleted', true);
+});
+
+// ---------- ticked item timer ----------
+
+expiryBtn.addEventListener('click', () => {
+  const list = current();
+  expiryDialog.querySelector<HTMLInputElement>(`input[name="expire-mode"][value="${list.expireMode}"]`)!.checked = true;
+  expireHours.value = String(list.expireHours);
+  expiryDialog.showModal();
+});
+
+expiryDialog.addEventListener('close', () => {
+  if (expiryDialog.returnValue === 'save') {
+    const list = current();
+    const mode = expiryDialog.querySelector<HTMLInputElement>('input[name="expire-mode"]:checked')?.value as ExpireMode;
+    list.expireMode = mode === 'reset' ? 'reset' : 'delete';
+    const hours = expireHours.valueAsNumber;
+    if (hours > 0) list.expireHours = hours;
+    expireTicked(state, Date.now());
+    commit();
+    render();
+  }
+  expiryDialog.returnValue = '';
 });
 
 // ---------- import / export ----------

@@ -26,6 +26,9 @@
         </button>
         <input id="title" class="title" placeholder="Title" aria-label="List title" autocomplete="off" />
         <div class="actions">
+          <button id="expiry-btn" class="icon-btn" type="button" aria-label="Ticked item timer">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16zm.5-13H11v6l5.2 3.2.8-1.3-4.5-2.7z" /></svg>
+          </button>
           <button id="import-btn" class="btn" type="button">Import</button>
           <button id="export-btn" class="btn" type="button" title="Copy the list as Markdown">Copy</button>
         </div>
@@ -52,7 +55,24 @@
       </section>
     </main>
 
-    <footer class="footer">Saved only in this browser. Ticked items delete themselves after 5 hours.</footer>
+    <footer class="footer">Saved only in this browser. <span id="expiry-note"></span></footer>
+
+    <dialog id="expiry-dialog" class="dialog">
+      <form method="dialog">
+        <h2>Ticked items</h2>
+        <p class="muted">What happens to ticked items in this list after a while.</p>
+        <label class="checkbox-row"><input type="radio" name="expire-mode" value="delete" /> Delete them</label>
+        <label class="checkbox-row"><input type="radio" name="expire-mode" value="reset" /> Untick them, for lists you repeat</label>
+        <label class="checkbox-row">
+          After <input id="expire-hours" class="hours" type="number" min="0.1" step="any" required aria-label="Hours" /> hours
+        </label>
+        <div class="dialog-footer">
+          <span class="muted"></span>
+          <button value="cancel" class="btn" type="submit" formnovalidate>Cancel</button>
+          <button value="save" class="btn btn-primary" type="submit">Save</button>
+        </div>
+      </form>
+    </dialog>
 
     <dialog id="import-dialog" class="dialog">
       <form method="dialog">

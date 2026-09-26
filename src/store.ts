@@ -8,11 +8,17 @@ export interface Item {
   indent: 0 | 1;
 }
 
+/** What happens to a ticked item once the list's expiry time has passed. */
+export type ExpireMode = 'delete' | 'reset';
+
 export interface List {
   id: string;
   title: string;
   items: Item[];
   doneCollapsed: boolean;
+  expireMode: ExpireMode;
+  /** Hours after ticking before expireMode kicks in. */
+  expireHours: number;
 }
 
 export interface State {
@@ -23,7 +29,10 @@ export interface State {
 export const STORAGE_KEY = 'keep-lists:v2';
 /** Single-list format from before multiple lists; migrated on first load and left in place as a backup. */
 const LEGACY_KEY = 'keep-list:v1';
-export const TTL_MS = 5 * 60 * 60 * 1000;
+export const DEFAULT_EXPIRE_HOURS = 5;
+const HOUR_MS = 60 * 60 * 1000;
+
+export const ttlMs = (list: List) => list.expireHours * HOUR_MS;
 
 export function newId(): string {
   // randomUUID is only available in secure contexts (https / localhost).
@@ -31,7 +40,7 @@ export function newId(): string {
 }
 
 export function newList(title = ''): List {
-  return { id: newId(), title, items: [], doneCollapsed: false };
+  return { id: newId(), title, items: [], doneCollapsed: false, expireMode: 'delete', expireHours: DEFAULT_EXPIRE_HOURS };
 }
 
 export function load(): State {
@@ -56,13 +65,22 @@ export function save(state: State): boolean {
   }
 }
 
-/** Removes completed items older than TTL_MS from every list. Returns true if anything was removed. */
-export function purgeExpired(state: State, now: number): boolean {
+/**
+ * Deletes or unticks (per each list's expireMode) ticked items older than the list's expiry time.
+ * Unticked items reappear where they were in the list. Returns true if anything changed.
+ */
+export function expireTicked(state: State, now: number): boolean {
   let changed = false;
   for (const list of state.lists) {
-    const before = list.items.length;
-    list.items = list.items.filter((i) => !(i.done && i.doneAt !== null && now - i.doneAt >= TTL_MS));
-    changed ||= list.items.length !== before;
+    const ttl = ttlMs(list);
+    const expired = (i: Item) => i.done && i.doneAt !== null && now - i.doneAt >= ttl;
+    if (!list.items.some(expired)) continue;
+    changed = true;
+    if (list.expireMode === 'delete') {
+      list.items = list.items.filter((i) => !expired(i));
+    } else {
+      for (const i of list.items.filter(expired)) Object.assign(i, { done: false, doneAt: null });
+    }
   }
   return changed;
 }
@@ -86,6 +104,8 @@ function sanitizeList(l: Loose, now: number): List {
     id: typeof l.id === 'string' ? l.id : newId(),
     title: typeof l.title === 'string' ? l.title : '',
     doneCollapsed: l.doneCollapsed === true,
+    expireMode: l.expireMode === 'reset' ? 'reset' : 'delete',
+    expireHours: typeof l.expireHours === 'number' && l.expireHours > 0 ? l.expireHours : DEFAULT_EXPIRE_HOURS,
     items: (Array.isArray(l.items) ? l.items : []).filter(isObject).map((i) => sanitizeItem(i, now)),
   };
 }

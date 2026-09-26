@@ -4,7 +4,7 @@ globalThis.localStorage ??= { getItem: (k: string) => mem.get(k) ?? null, setIte
 
 import { describe, expect, it } from 'vitest';
 import { parseMarkdownList, parseTitle, toMarkdown } from './markdown';
-import { TTL_MS, load, purgeExpired, sanitize, type Item } from './store';
+import { expireTicked, load, sanitize, type Item } from './store';
 
 describe('parseMarkdownList', () => {
   it('parses bullets, numbers and task checkboxes', () => {
@@ -78,7 +78,8 @@ describe('toMarkdown', () => {
 });
 
 describe('store', () => {
-  it('purges ticked items older than 5 hours only, across all lists', () => {
+  it('deletes ticked items older than 5 hours by default, across all lists', () => {
+    const TTL_MS = 5 * 60 * 60 * 1000;
     const now = 10 * TTL_MS;
     const state = sanitize({
       lists: [
@@ -92,9 +93,43 @@ describe('store', () => {
         { items: [{ id: 'd', text: 'old too', done: true, doneAt: 0 }] },
       ],
     });
-    expect(purgeExpired(state, now)).toBe(true);
+    expect(expireTicked(state, now)).toBe(true);
     expect(state.lists.map((l) => l.items.map((i) => i.id))).toEqual([['b', 'c'], []]);
-    expect(purgeExpired(state, now)).toBe(false);
+    expect(expireTicked(state, now)).toBe(false);
+  });
+
+  it('unticks or deletes per list after each list\'s own expiry time', () => {
+    const H = 60 * 60 * 1000;
+    const now = 100 * H;
+    const state = sanitize({
+      lists: [
+        {
+          id: 'reset',
+          expireMode: 'reset',
+          expireHours: 1,
+          items: [
+            { id: 'a', text: 'expired', done: true, doneAt: now - H },
+            { id: 'b', text: 'open', done: false },
+            { id: 'c', text: 'recent', done: true, doneAt: now - H + 1 },
+          ],
+        },
+        { id: 'del', expireHours: 0.5, items: [{ id: 'd', text: 'gone', done: true, doneAt: now - H / 2 }] },
+      ],
+    });
+    expect(expireTicked(state, now)).toBe(true);
+    const [reset, del] = state.lists;
+    expect(reset.items.map((i) => [i.id, i.done, i.doneAt])).toEqual([
+      ['a', false, null],
+      ['b', false, null],
+      ['c', true, now - H + 1],
+    ]);
+    expect(del.items).toEqual([]);
+    expect(expireTicked(state, now)).toBe(false);
+  });
+
+  it('defaults bad expiry settings to delete after 5 hours', () => {
+    const [l] = sanitize({ lists: [{ expireMode: 'nope', expireHours: -2 }] }).lists;
+    expect(l).toMatchObject({ expireMode: 'delete', expireHours: 5 });
   });
 
   it('sanitizes bad data and always has a current list', () => {
